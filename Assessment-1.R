@@ -107,3 +107,39 @@ landBuffer<-function(speciesData, r){
   #Return the result
   return(percentcover)
 }
+#Loop over 100-2000 meter in 100 m steps
+radii<-seq(100,2000,by=100)
+resList=list()
+
+for(i in radii){
+  res.i=landBuffer(speciesData=melesSF,r=i)
+  res.i
+  resList[[i/100]]=res.i
+  print(i)
+  
+}
+#Combining results into data frame()
+resFin=do.call("cbind",resList)
+
+#convert to data frame
+glmData=data.frame(resFin)
+colnames(glmData)=paste("radius",radii,sep="")
+glmData$Pres<-melesData$Pres
+
+#make an empty data frame to then add a sequence of results from GLM
+glmRes=data.frame(radius=NA,loglikelihood=NA)
+
+#for loop to iterate over radius values and run a general linear model with glm()
+for(i in radii){
+  
+  #build the model formula
+  n.i=paste0("Pres~","radius",i,sep ="")
+  
+  glm.i=glm(formula(n.i),family = "binomial",data = glmData)
+  
+  ll.i=as.numeric(logLik(glm.i))
+  
+  glmRes=rbind(glmRes,c(i,ll.i))
+  
+}
+
