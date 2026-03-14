@@ -24,10 +24,10 @@ class(meles)
 #Selecting all rows with complete values for latitude
 meles<-meles[!is.na(meles$Latitude),]
 
-#remove all points with uncertainty > 100m
+#remove all points with uncertainty > 1000m
 meles <- meles[meles$Coordinate.uncertainty_m<=1000, ]
 
-#creating crs object
+#creating CRS object
 meles.latlong<-data.frame(x=meles$Longitude,y=meles$Latitude)
 
 #Using coordinates to create spatial object points
@@ -43,3 +43,19 @@ mapview(st_as_sf(meles.sp))
 #Read in the raster data
 LCM=rast("LCMUK.tif")
 
+#Setting the extent in the order: min x, max x, min y, max y
+studyExtent<-c(-4.2, -2.7, 56.5, 57.5)
+meles.crop<-crop(meles.sp, studyExtent)
+
+#Projecting badger points to same CRS as LCM (EPSG:27700)
+meles.proj<-project(meles.crop, crs(LCM))
+
+#Setting crop extent with 5 km buffer
+melesCoords<-crds(meles.proj)
+x.min<-min(melesCoords[,1]) - 5000
+x.max<-max(melesCoords[,1]) + 5000
+y.min<-min(melesCoords[,2]) - 5000
+y.max<-max(melesCoords[,2]) + 5000
+extent.new<-ext(x.min,y.min,x.max,y.max)
+LCM.crop <- crop(LCM$LCMUK_1, extent.new)
+plot(LCM.crop)
