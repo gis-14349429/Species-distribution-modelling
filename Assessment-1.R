@@ -56,6 +56,32 @@ x.min<-min(melesCoords[,1]) - 5000
 x.max<-max(melesCoords[,1]) + 5000
 y.min<-min(melesCoords[,2]) - 5000
 y.max<-max(melesCoords[,2]) + 5000
-extent.new<-ext(x.min,y.min,x.max,y.max)
+extent.new<-ext(x.min,x.max,y.min,y.max)
 LCM.crop <- crop(LCM$LCMUK_1, extent.new)
 plot(LCM.crop)
+
+#Reclassification of LCM to binary braodleaf woodland layer 
+LCM.factor<-as.factor(LCM.crop)
+levels(LCM.factor)
+#create an vector object called reclass
+reclass <- c(0,1,rep(0,19))
+
+# combine with the LCM categories into a matrix of old and new values.
+RCmatrix<- cbind(levels(LCM.factor)[[1]],reclass)
+
+RCmatrix<-RCmatrix[,2:3]
+
+#apply function to make sure new columns are numeric 
+RCmatrix=apply(RCmatrix,2,FUN=as.numeric)
+broadleaf<-classify(LCM.crop, RCmatrix)
+
+#Generating pseudo-absence points
+set.seed(11)
+back.xy<-spatSample(LCM.crop, size=1000, as.points=TRUE)
+plot(LCM.crop)
+plot(meles.proj,add=T)
+plot(back.xy,add=TRUE,col='red')
+
+#Creating a single dataframe to hold both presence and absence data
+Abs<-data.frame(crds(back.xy),Pres=0)
+head(Abs)
