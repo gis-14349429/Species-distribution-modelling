@@ -85,3 +85,25 @@ plot(back.xy,add=TRUE,col='red')
 #Creating a single dataframe to hold both presence and absence data
 Abs<-data.frame(crds(back.xy),Pres=0)
 head(Abs)
+Pres<-data.frame(crds(meles.proj),Pres=1)
+head(Pres)
+melesData<-rbind(Pres,Abs)
+head(melesData)
+#Add coordinates to the dataframe using sf
+melesSF=st_as_sf(melesData,coords=c("x","y"),crs="EPSG:27700")
+
+#Creating a function to automate buffer calculations
+landBuffer<-function(speciesData, r){
+  #Buffer each point
+  melesBuffer<-st_buffer(speciesData, dist=r)
+  #Crop the woodland layer to the buffer extent
+  bufferlandcover<-crop(broadleaf, melesBuffer)
+  #Extracting the raster values
+  masklandcover<-extract(bufferlandcover,melesBuffer,fun="sum")
+  #Get woodland area
+  landcoverArea<-masklandcover$LCMUK_1*625
+  #Convert to percentage cover but convert to numeric object
+  percentcover<-landcoverArea/as.numeric(st_area(melesBuffer))*100
+  #Return the result
+  return(percentcover)
+}
