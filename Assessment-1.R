@@ -169,7 +169,7 @@ opt_scale_broadleaf<-opt$radius
 
 ##### Model testing for Species distribution (GLM & Maxnet) ####
 
-scot=st_read('scotSamp.shp')
+scot = st_read("scotSamp.shp")
 #Loading in the land cover map 
 LCM_sdm = rast("LCMUK.tif")
 #Crop to the extent of the study area 
@@ -235,6 +235,8 @@ for(i in 1:nPix^2){
 weightsMatrix[] = unlist(distances)
 weightsMatrix[weightsMatrix > opt_scale_broadleaf] <- NA
 weightsMatrix[!is.na(weightsMatrix)] <- 1/length(weightsMatrix[!is.na(weightsMatrix)])
+
+plot(rast(weightsMatrix))
 
 #Sum neighbourhood values from surrounding cells
 lcm_wood=focal(broadleaf_sdm,w=weightsMatrix,fun="sum")
@@ -361,3 +363,150 @@ all.cov = cbind(all.cov,coords)
 all.cov=na.omit(all.cov)
 all.cov=st_drop_geometry(all.cov)
 
+
+#make a grid for spatial blocking
+area_grid = st_make_grid(melesFin, c(50000, 50000), what = "polygons", square = T)
+area_grid_sf = st_as_sf(area_grid)
+
+#the original grid from st_make_grid() is contained in a list so we can use the position of each square of that list as its ID.
+area_grid_sf$grid_id=1:length(lengths(area_grid))
+plot(area_grid_sf$x)
+plot(melesFin$geometry,add=T)
+
+## Maxnet: Non-spatial 5 fold cross validation ##
+
+# set folds
+spatial_folds = area_grid_sf$grid_id
+dataPoints=st_as_sf(all.cov,coords = c("x","y"))
+st_crs(dataPoints)=crs(area_grid_sf)
+
+#set number of folds to use
+folds=5
+
+#partition presence and background data and assign to folds using the kfold() function.
+
+Pres.cov=all.cov[all.cov$Pres==1,]
+Back.cov=all.cov[all.cov$Pres==0,]
+
+
+kfold_pres = kfold(Pres.cov, folds)
+kfold_back = kfold(Back.cov, folds)
+
+eMax=list()
+
+for (i in 1:folds) {
+  train = Pres.cov[kfold_pres!= i,]
+  test = Pres.cov[kfold_pres == i,]
+  backTrain=Back.cov[kfold_back!=i,]
+  backTest=Back.cov[kfold_back==i,]
+  dataTrain=rbind(train,backTrain)
+  dataTest=rbind(test,backTest)
+  maxnetMod=maxnet(dataTrain$Pres, dataTrain[,1:3])
+  
+  eMax[[i]] = evaluate(p=dataTest[ which(dataTest$Pres==1),],a=dataTest[which(dataTest$Pres==0),],maxnetMod)
+}
+
+#print the result
+
+aucMax = sapply(eMax, function(x){slot(x, 'auc')})
+
+print(mean(aucMax))
+
+## Maxnet: Spatial cross validation ##
+
+spatial_folds = area_grid_sf$grid_id
+
+maxEvalList=list()
+for (i in spatial_folds) {
+  
+  
+  
+  #select all folds which are not 'i' to train the model
+  gridTrain=subset(area_grid_sf,area_grid_sf$grid_id!=i)
+  
+  #spatially subset the training data
+  train=data.frame(st_drop_geometry(st_intersection(gridTrain, dataPoints)))
+  
+  #spatially subset the test data 
+  gridTest=subset(area_grid_sf,area_grid_sf$grid_id==i)
+  
+  
+  test=data.frame(st_drop_geometry(st_intersection(gridTest, dataPoints)))  
+  
+  
+  #build model
+  train
+  maxnetMod=maxnet(train$Pres, train[1:3],
+                   classes="lq")   
+  
+  
+  #make prediction
+  pred=predict(maxnetMod, test,type="cloglog")
+  
+  #use precrec to get roc curves
+  precrec_proc=evalmod(scores = pred,labels = test$Pres,mode = "prcroc")
+  
+  
+  #get auc value
+  modauc=precrec::auc(precrec::evalmod(scores = pred, 
+                                       labels = test$Pres))
+  
+  
+  #add to list
+  maxEvalList[[i]]=modauc$aucs[1]
+  
+  #track
+  print(i)
+  
+}
+mean(unlist(maxEvalList))
+
+####### GLM: Non-spatial cross validation #########
+#Create an empty list to hold our results
+eGLM<-list()
+par(mfrow=c(2,3))
+
+for (i in 1:folds) {
+  train <- Pres.cov[kfold_pres!= i,]
+  test <- Pres.cov[kfold_pres == i,]
+  backTrain<-Back.cov[kfold_back!=i,]
+  backTest<-Back.cov[kfold_back==i,]
+  dataTrain<-rbind(train,backTrain)
+  dataTest<-rbind(test,backTest)
+  glm_eval <- glm(Pres~.,binomial(link = "logit"), data=dataTrain[,c("broadleaf","urban","elev","Pres")])
+  eGLM[[i]] <- evaluate(p=dataTest[ which(dataTest$Pres==1),],a=dataTest[which(dataTest$Pres==0),], glm_eval)
+  
+  #check the AUC by plotting ROC values
+  
+  plot(eGLM[[i]],'ROC')
+  
+}
+aucGLM <- sapply( eGLM, function(x){slot(x, 'auc')} )
+mean(aucGLM)
+
+######## GLM:Spatial cross validation #########
+
+task=all.cov
+head(all.cov)
+task$Pres=as.factor(task$Pres)
+
+task = makeClassifTask(data = task[,c("broadleaf","urban","elev","Pres")], target = "Pres",
+                       positive = "1", coordinates = task[,c("x","y")])
+
+#Build a learner function for a regular binomial regression
+lrnBinomial = makeLearner("classif.binomial",
+                          predict.type = "prob",
+                          fix.factors.prediction = TRUE)
+
+#set up resampling strategy for spatial cross-validation
+perf_level_spCV = makeResampleDesc(method = "SpRepCV", folds = 5, reps = 5) 
+#Binomial conventional cross validation (K fold)
+
+
+sp_cvBinomial = resample(learner = lrnBinomial, task =task,
+                      resampling = perf_level_spCV, 
+                      measures = mlr::auc,
+                      show.info = FALSE)
+
+#Print spatial GLM AUC
+print(sp_cvBinomial)
