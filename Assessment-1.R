@@ -233,10 +233,131 @@ for(i in 1:nPix^2){
 }
 
 weightsMatrix[] = unlist(distances)
-weightsMatrix[weightsMatrix > opt_scale_broadleaf <- NA]
+weightsMatrix[weightsMatrix > opt_scale_broadleaf] <- NA
 weightsMatrix[!is.na(weightsMatrix)] <- 1/length(weightsMatrix[!is.na(weightsMatrix)])
 
 #Sum neighbourhood values from surrounding cells
-lcm_wood=focal(broadleaf,w=weightsMatrix,fun="sum")
+lcm_wood=focal(broadleaf_sdm,w=weightsMatrix,fun="sum")
 
 plot(lcm_wood)
+
+## Creating a layer for urban class at 2300 meter ##
+#create an vector object called reclassUrban
+reclassUrban = c(rep(0,19),1,1)
+
+# combine with the LCM categories into a matrix of old and new values.
+RCmatrixUrban= cbind(levels(LCM_factor)[[1]],reclassUrban)
+
+RCmatrixUrban=RCmatrixUrban[,2:3]
+
+#apply function to make sure new columns are numeric
+RCmatrixUrban=apply(RCmatrixUrban,2,FUN=as.numeric)
+#Use the reclassify() function to asssign new values to LCM with our reclassification matrix
+
+urban = classify(LCM_sdm, RCmatrixUrban)
+
+#neighbourhood weights matrix to sum all available resources for each cell
+
+#get number of picels needed to cover the 2300 metre radius for the urban class
+
+nPixUrban=round(2300/res(LCM_sdm)[1])
+
+#double this number (one for rows and one for columns) and add one
+
+nPixUrban=(nPixUrban*2)+1
+
+#buiild weights matrix
+weightsMatrixUrban=matrix(1:nPixUrban^2,nrow=nPixUrban,ncol=nPixUrban)
+
+#get focal cell 
+x=ceiling(ncol(weightsMatrixUrban)/2)
+y=ceiling(nrow(weightsMatrixUrban)/2)
+
+
+focalCell=weightsMatrixUrban[x,y]
+
+
+indFocal=which(weightsMatrixUrban==focalCell,arr.ind = TRUE)
+
+#compute distances
+distancesUrban=list()
+
+for(i in 1:nPixUrban^2){
+  ind.i=which(weightsMatrixUrban==i,arr.ind=T)
+  diffX=abs(ind.i[1,1]-indFocal[1,1])*res(LCM_sdm)[1]
+  diffY=abs(ind.i[1,2]-indFocal[1,2])*res(LCM_sdm)[1]
+  
+  dist.i=sqrt(diffX^2+diffY^2)
+  distancesUrban[[i]]=dist.i
+  
+}
+
+
+#add distance values to the weights matrix
+weightsMatrixUrban[]=unlist(distancesUrban)
+
+#set cells outside search radius to NA
+weightsMatrixUrban[weightsMatrixUrban>2300]=NA
+
+#normalise the weights matrix by dividing all cell values by the number of cells. 
+weightsMatrixUrban[!is.na(weightsMatrixUrban)]=1/length(weightsMatrixUrban[!is.na(weightsMatrixUrban)])
+
+#sum urban class from all surrounding cells
+
+lcm_urban_2300=focal(urban,w=weightsMatrixUrban,fun="sum")
+
+#Loading a Digital elevation model
+dem = rast('demScotland.tif')
+#Resampling the DEM to match its resolution, origin and extent to another raster
+dem = terra::resample(dem,lcm_wood)
+#Stack the covariate layers together
+allEnv = c(lcm_wood,lcm_urban_2300,dem)
+names(allEnv) = c("broadleaf","urban","elev")
+
+#Generating background points
+set.seed(11)
+#sample background - one point for every cell (9775)
+back_sdm = spatSample(allEnv,size=2000,as.points=TRUE,method="random",na.rm=TRUE) 
+back_sdm =back_sdm[!is.na(back_sdm$broadleaf),]
+
+back_sdm = st_as_sf(back_sdm,crs="EPSG:27700")
+
+##Extraction of data to points##
+#Get environmental covariates at presence locations
+eP_sdm = terra::extract(allEnv, melesFin)
+
+#bind together the presence data using cbind() which binds together objects by column (i.e. with different columns but the same number of rows)
+Pres.cov=st_as_sf(cbind(eP_sdm, melesFin))
+
+Pres.cov$Pres=1
+
+
+#Remove the first column which is just an ID field.
+Pres.cov=Pres.cov[,-1]
+
+#get coordinates for spatial cross-validation later
+coordsPres=st_coordinates(Pres.cov)
+
+#drop geometry column using st_drop_geometry()
+Back.cov=st_as_sf(data.frame(back_sdm,Pres=0))
+
+
+#get coordinates of background points for cross validation later
+coordsBack=st_coordinates(back_sdm)
+
+#combine
+coords=data.frame(rbind(coordsPres,coordsBack))
+
+#assign column names
+colnames(coords)=c("x","y")
+
+#Combine all data
+
+#combine presence and background
+all.cov = rbind(Pres.cov,Back.cov)
+#add coordinates
+all.cov = cbind(all.cov,coords)
+#remove any NAs
+all.cov=na.omit(all.cov)
+all.cov=st_drop_geometry(all.cov)
+
