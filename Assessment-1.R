@@ -2,7 +2,7 @@
 #Set working directory 
 setwd("C:/Users/User/OneDrive - The University of Manchester/GEOG71922/Assessment-1/spatialecology-assessment1")
 #Install packages
-install.packages(c("terra","sf","mapview","spatstat","dismo","glmnet","maxnet"))
+install.packages(c("terra","sf","mapview","spatstat","dismo","glmnet","maxnet","ggplot2"))
 install.packages("mlr")
 install.packages("rnaturalearth")
 #Loading the libraries
@@ -15,6 +15,7 @@ library(rnaturalearth)
 library(glmnet)
 library(maxnet)
 library(mlr)
+library(ggplot2)
 #Read in the .csv file 
 meles<- read.csv("Melesmeles.csv")
 #Check the first  six rows of the data 
@@ -143,3 +144,18 @@ for(i in radii){
   
 }
 
+#Finding optimum buffer size
+
+#remove the NAs in the first row
+glmRes=glmRes[!is.na(glmRes),]
+
+#Subset the data frame to just the row containing the max log likelihood value
+
+opt<-glmRes[which.max(glmRes$loglikelihood),]
+
+#print
+opt
+
+#Plotting the loglikelyhood
+plot(glmRes$radius, glmRes$loglikelihood, type = "b", frame = FALSE, pch = 19, 
+     col = "red", xlab = "Buffer", ylab = "Log-Likelihood")
