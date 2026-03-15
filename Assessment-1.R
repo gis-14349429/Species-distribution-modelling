@@ -510,3 +510,14 @@ sp_cvBinomial = resample(learner = lrnBinomial, task =task,
 
 #Print spatial GLM AUC
 print(sp_cvBinomial)
+
+##Mapping the data##
+#Specify the model
+glm.meles=glm(Pres~broadleaf+urban+elev,binomial(link='logit'),
+                data=all.cov)
+
+#predict and inspect the output
+prGLM=predict(allEnv,glm.meles,type="response")
+
+#plot
+plot(prGLM)
