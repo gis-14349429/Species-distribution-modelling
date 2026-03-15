@@ -2,7 +2,7 @@
 #Set working directory 
 setwd("C:/Users/User/OneDrive - The University of Manchester/GEOG71922/Assessment-1/spatialecology-assessment1")
 #Install packages
-install.packages(c("terra","sf","mapview","spatstat","dismo","glmnet","maxnet","ggplot2"))
+install.packages(c("terra","sf","mapview","spatstat","dismo","glmnet","maxnet","ggplot2","precrec","ranger"))
 install.packages("mlr")
 install.packages("rnaturalearth")
 #Loading the libraries
@@ -16,6 +16,8 @@ library(glmnet)
 library(maxnet)
 library(mlr)
 library(ggplot2)
+library(precrec)
+library(ranger)
 #Read in the .csv file 
 meles<- read.csv("Melesmeles.csv")
 #Check the first  six rows of the data 
@@ -159,3 +161,82 @@ opt
 #Plotting the loglikelyhood
 plot(glmRes$radius, glmRes$loglikelihood, type = "b", frame = FALSE, pch = 19, 
      col = "red", xlab = "Buffer", ylab = "Log-Likelihood")
+
+#Store optimum scale 
+opt_scale_broadleaf<-opt$radius
+
+#############################################################################
+
+##### Model testing for Species distribution (GLM & Maxnet) ####
+
+scot=st_read('scotSamp.shp')
+#Loading in the land cover map 
+LCM_sdm = rast("LCMUK.tif")
+#Crop to the extent of the study area 
+LCM_sdm = crop(LCM,st_buffer(scot, dist= 1000))
+#Aggregate LCM raster
+LCM_sdm = aggregate(LCM_sdm$LCMUK_1,fact=4,fun="modal")
+
+meles_sdm <- vect(data.frame(x=meles$Longitude, y=meles$Latitude),geom=c("x","y"))
+#Defining the project of the badger points
+crs(meles_sdm)<-"epsg:4326"
+
+meles.proj1=st_as_sf(meles_sdm,coords=c("x","y"),crs="epsg:4326")
+#project badger data
+meles.proj1 = st_transform(meles.proj1,crs(LCM))
+#now crop the points to the study area
+melesFin = meles.proj1[scot,]
+#finally, mask the LCM to this boundary
+LCM_sdm = crop(LCM_sdm,scot,mask=TRUE)
+
+##### Set up covariates (environmental and land cover variable) ##### 
+#Access levels of the raster
+LCM_factor = as.factor(LCM_sdm$LCMUK_1)
+
+#create an vector object called reclass
+reclass_sdm = c(0,1,rep(0,20))
+
+# combine with the LCM categories into a matrix of old and new values.
+RCmatrix_sdm = cbind(levels(LCM_factor)[[1]],reclass_sdm)
+
+RCmatrix_sdm = RCmatrix_sdm[,2:3]
+
+#apply function to make sure new columns are numeric
+RCmatrix_sdm = apply(RCmatrix_sdm,2,FUN=as.numeric)
+
+#Assign new values to LCM with reclassification matrix
+broadleaf_sdm = classify(LCM_sdm, RCmatrix_sdm)
+
+####Creating spatial weights matrix#####
+#Number of pixels needed to cover the optimum radius
+nPix <- round(opt_scale_broadleaf/res(LCM_sdm)[1])
+nPix <- (nPix*2)+1
+#Build weights matrix
+weightsMatrix = matrix(1:nPix^2,nrow=nPix,ncol=nPix)
+#get focal cell 
+x=ceiling(ncol(weightsMatrix)/2)
+y=ceiling(nrow(weightsMatrix)/2)
+focalCell=weightsMatrix[x,y]
+indFocal=which(weightsMatrix==focalCell,arr.ind = TRUE)
+
+#compute distances
+distances=list()
+
+for(i in 1:nPix^2){
+  ind.i=which(weightsMatrix==i,arr.ind=T)
+  diffX=abs(ind.i[1,1]-indFocal[1,1])*res(LCM_sdm)[1]
+  diffY=abs(ind.i[1,2]-indFocal[1,2])*res(LCM_sdm)[1]
+  
+  dist.i=sqrt(diffX^2+diffY^2)
+  distances[[i]]=dist.i
+  
+}
+
+weightsMatrix[] = unlist(distances)
+weightsMatrix[weightsMatrix > opt_scale_broadleaf <- NA]
+weightsMatrix[!is.na(weightsMatrix)] <- 1/length(weightsMatrix[!is.na(weightsMatrix)])
+
+#Sum neighbourhood values from surrounding cells
+lcm_wood=focal(broadleaf,w=weightsMatrix,fun="sum")
+
+plot(lcm_wood)
