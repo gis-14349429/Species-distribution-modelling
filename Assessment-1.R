@@ -1,10 +1,11 @@
 #ASSESSMENT-1
 #Set working directory 
-setwd("C:/Users/User/OneDrive - The University of Manchester/GEOG71922/Assessment-1/spatialecology-assessment1")
+setwd("../../Assessment-1/spatialecology-assessment1")
 #Install packages
 install.packages(c("terra","sf","mapview","spatstat","dismo","glmnet","maxnet","ggplot2","precrec","ranger"))
 install.packages("mlr")
 install.packages("rnaturalearth")
+install.packages("ranger")
 #Loading the libraries
 library(terra)
 library(sf)
@@ -194,7 +195,7 @@ LCM_sdm = crop(LCM_sdm,scot,mask=TRUE)
 LCM_factor = as.factor(LCM_sdm$LCMUK_1)
 
 #create an vector object called reclass
-reclass_sdm = c(0,1,rep(0,20))
+reclass_sdm = c(0,1,rep(0,length(levels(LCM_factor)[[1]]$ID) -2))
 
 # combine with the LCM categories into a matrix of old and new values.
 RCmatrix_sdm = cbind(levels(LCM_factor)[[1]],reclass_sdm)
@@ -245,7 +246,7 @@ plot(lcm_wood)
 
 ## Creating a layer for urban class at 2300 meter ##
 #create an vector object called reclassUrban
-reclassUrban = c(rep(0,19),1,1)
+reclassUrban = c(rep(0, length(levels(LCM_factor)[[1]]$ID) -2),1,1)
 
 # combine with the LCM categories into a matrix of old and new values.
 RCmatrixUrban= cbind(levels(LCM_factor)[[1]],reclassUrban)
@@ -313,7 +314,7 @@ dem = rast('demScotland.tif')
 #Resampling the DEM to match its resolution, origin and extent to another raster
 dem = terra::resample(dem,lcm_wood)
 #Stack the covariate layers together
-allEnv = c(lcm_wood,lcm_urban_2300,dem)
+allEnv = c(lcm_wood,lcm_urban_2300, dem)
 names(allEnv) = c("broadleaf","urban","elev")
 
 #Generating background points
@@ -324,7 +325,7 @@ back_sdm =back_sdm[!is.na(back_sdm$broadleaf),]
 
 back_sdm = st_as_sf(back_sdm,crs="EPSG:27700")
 
-##Extraction of data to points##
+## Extraction of data to point s##
 #Get environmental covariates at presence locations
 eP_sdm = terra::extract(allEnv, melesFin)
 
@@ -362,7 +363,7 @@ all.cov = cbind(all.cov,coords)
 #remove any NAs
 all.cov=na.omit(all.cov)
 all.cov=st_drop_geometry(all.cov)
-
+glm.meles<-glm(Pres~broadleaf + urban + elev, binomial(link='logit'), data=all.cov)
 
 #make a grid for spatial blocking
 area_grid = st_make_grid(melesFin, c(50000, 50000), what = "polygons", square = T)
@@ -373,7 +374,7 @@ area_grid_sf$grid_id=1:length(lengths(area_grid))
 plot(area_grid_sf$x)
 plot(melesFin$geometry,add=T)
 
-## Maxnet: Non-spatial 5 fold cross validation ##
+###### Maxnet: Non-spatial (random) 5 fold cross validation ######
 
 # set folds
 spatial_folds = area_grid_sf$grid_id
@@ -401,7 +402,7 @@ for (i in 1:folds) {
   backTest=Back.cov[kfold_back==i,]
   dataTrain=rbind(train,backTrain)
   dataTest=rbind(test,backTest)
-  maxnetMod=maxnet(dataTrain$Pres, dataTrain[,1:3])
+  maxnetMod=maxnetMod <- maxnet(all.cov$Pres,all.cov[,c("broadleaf", "urban", "elev")],classes="lq")   
   
   eMax[[i]] = evaluate(p=dataTest[ which(dataTest$Pres==1),],a=dataTest[which(dataTest$Pres==0),],maxnetMod)
 }
@@ -412,7 +413,11 @@ aucMax = sapply(eMax, function(x){slot(x, 'auc')})
 
 print(mean(aucMax))
 
-## Maxnet: Spatial cross validation ##
+
+#retrieve optimal threhold
+mean(unlist(aucMax))
+
+####### Maxnet: Spatial cross validation #######
 
 spatial_folds = area_grid_sf$grid_id
 
@@ -436,7 +441,7 @@ for (i in spatial_folds) {
   
   #build model
   train
-  maxnetMod=maxnet(train$Pres, train[1:3],
+  maxnetMod=maxnet(train$Pres, train[,c("broadleaf","urban","elev")],
                    classes="lq")   
   
   
@@ -461,7 +466,8 @@ for (i in spatial_folds) {
 }
 mean(unlist(maxEvalList))
 
-####### GLM: Non-spatial cross validation #########
+
+####### GLM: Non-spatial (random) cross validation #########
 #Create an empty list to hold our results
 eGLM<-list()
 par(mfrow=c(2,3))
@@ -511,13 +517,30 @@ sp_cvBinomial = resample(learner = lrnBinomial, task =task,
 #Print spatial GLM AUC
 print(sp_cvBinomial)
 
-##Mapping the data##
-#Specify the model
-glm.meles=glm(Pres~broadleaf+urban+elev,binomial(link='logit'),
-                data=all.cov)
+###### Mapping GLM #######
 
-#predict and inspect the output
-prGLM=predict(allEnv,glm.meles,type="response")
+Opt_GLM<-sapply(eGLM, function(x){ x@t[which.max(x@TPR + x@TNR)] } )
+#take the mean to be applied to our predictions
 
-#plot
-plot(prGLM)
+Mean_OptGLM<- mean(Opt_GLM)
+
+trGLM<-plogis(Mean_OptGLM)
+prGLM <- predict(allEnv, glm.meles,type = "response")
+par(mfrow=c(1,2))
+plot(prGLM, main='GLM, regression')
+
+plot(prGLM > trGLM, main='presence/absence')
+
+##### Mapping Maxnet #####
+
+#Predict the model to data
+prMAX <- predict(allEnv, maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
+
+#plot according to predicted values and to thresholds
+par(mfrow=c(1,2))
+plot(prMAX, main='Maxent Prediction')
+prMAX<-predict(allEnv,maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
+
+
+plot(prMAX> meanOptMax, main='presence/absence')
+
