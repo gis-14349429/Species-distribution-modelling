@@ -402,7 +402,7 @@ for (i in 1:folds) {
   backTest=Back.cov[kfold_back==i,]
   dataTrain=rbind(train,backTrain)
   dataTest=rbind(test,backTest)
-  maxnetMod=maxnetMod <- maxnet(all.cov$Pres,all.cov[,c("broadleaf", "urban", "elev")],classes="lq")   
+  maxnetMod=maxnetMod <- maxnet(dataTrain$Pres, dataTrain [,c("broadleaf", "urban", "elev")],classes="lq")   
   
   eMax[[i]] = evaluate(p=dataTest[ which(dataTest$Pres==1),],a=dataTest[which(dataTest$Pres==0),],maxnetMod)
 }
@@ -532,6 +532,9 @@ plot(prGLM, main='GLM, regression')
 plot(prGLM > trGLM, main='presence/absence')
 
 ##### Mapping Maxnet #####
+
+#Fit maxent model on all data
+maxnetAll = maxnet(all.cov$Pres, all.cov[,c("broadleaf","urban","elev"),classes = "lq"])
 
 #Predict the model to data
 prMAX <- predict(allEnv, maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
