@@ -75,7 +75,7 @@ RCmatrix<- cbind(levels(LCM.factor)[[1]],reclass)
 
 RCmatrix<-RCmatrix[,2:3]
 
-#apply function to make sure new columns are numeric 
+#Applying function to make sure new columns are numeric 
 RCmatrix=apply(RCmatrix,2,FUN=as.numeric)
 broadleaf<-classify(LCM.crop, RCmatrix)
 
@@ -93,7 +93,7 @@ Pres<-data.frame(crds(meles.proj),Pres=1)
 head(Pres)
 melesData<-rbind(Pres,Abs)
 head(melesData)
-#Add coordinates to the dataframe using sf
+#Add coordinates to the data frame using sf
 melesSF=st_as_sf(melesData,coords=c("x","y"),crs="EPSG:27700")
 
 #Creating a function to automate buffer calculations
@@ -104,7 +104,7 @@ landBuffer<-function(speciesData, r){
   bufferlandcover<-crop(broadleaf, melesBuffer)
   #Extracting the raster values
   masklandcover<-extract(bufferlandcover,melesBuffer,fun="sum")
-  #Get woodland area
+  #Get woodland area (625 is the area of each cell)
   landcoverArea<-masklandcover$LCMUK_1*625
   #Convert to percentage cover but convert to numeric object
   percentcover<-landcoverArea/as.numeric(st_area(melesBuffer))*100
@@ -123,10 +123,10 @@ for(i in radii){
   
 }
 #Combining results into data frame()
-resFin=do.call("cbind",resList)
+resFin = do.call("cbind",resList)
 
 #convert to data frame
-glmData=data.frame(resFin)
+glmData = data.frame(resFin)
 colnames(glmData)=paste("radius",radii,sep="")
 glmData$Pres<-melesData$Pres
 
@@ -169,17 +169,17 @@ opt_scale_broadleaf<-opt$radius
 #############################################################################
 
 ##### Model testing for Species distribution (GLM & Maxnet) ####
-
+#Read in the vector shapefile 
 scot = st_read("scotSamp.shp")
 #Loading in the land cover map 
 LCM_sdm = rast("LCMUK.tif")
 #Crop to the extent of the study area 
 LCM_sdm = crop(LCM,st_buffer(scot, dist= 1000))
-#Aggregate LCM raster
+#Aggregate LCM raster as mlr can be computationally demanding
 LCM_sdm = aggregate(LCM_sdm$LCMUK_1,fact=4,fun="modal")
 
 meles_sdm <- vect(data.frame(x=meles$Longitude, y=meles$Latitude),geom=c("x","y"))
-#Defining the project of the badger points
+#Defining the projection of the badger points
 crs(meles_sdm)<-"epsg:4326"
 
 meles.proj1=st_as_sf(meles_sdm,coords=c("x","y"),crs="epsg:4326")
@@ -191,7 +191,7 @@ melesFin = meles.proj1[scot,]
 LCM_sdm = crop(LCM_sdm,scot,mask=TRUE)
 
 ##### Set up covariates (environmental and land cover variable) ##### 
-#Access levels of the raster
+#Access levels of the raster for the reclassification
 LCM_factor = as.factor(LCM_sdm$LCMUK_1)
 
 #create an vector object called reclass
@@ -209,6 +209,7 @@ RCmatrix_sdm = apply(RCmatrix_sdm,2,FUN=as.numeric)
 broadleaf_sdm = classify(LCM_sdm, RCmatrix_sdm)
 
 ####Creating spatial weights matrix#####
+
 #Number of pixels needed to cover the optimum radius
 nPix <- round(opt_scale_broadleaf/res(LCM_sdm)[1])
 nPix <- (nPix*2)+1
@@ -244,8 +245,9 @@ lcm_wood=focal(broadleaf_sdm,w=weightsMatrix,fun="sum")
 
 plot(lcm_wood)
 
-## Creating a layer for urban class at 2300 meter ##
-#create an vector object called reclassUrban
+#### Creating a layer for urban class at 2300 meter ####
+
+#create a vector object called reclassUrban
 reclassUrban = c(rep(0, length(levels(LCM_factor)[[1]]$ID) -2),1,1)
 
 # combine with the LCM categories into a matrix of old and new values.
@@ -253,15 +255,15 @@ RCmatrixUrban= cbind(levels(LCM_factor)[[1]],reclassUrban)
 
 RCmatrixUrban=RCmatrixUrban[,2:3]
 
-#apply function to make sure new columns are numeric
+#Apply function to make sure new columns are numeric
 RCmatrixUrban=apply(RCmatrixUrban,2,FUN=as.numeric)
-#Use the reclassify() function to asssign new values to LCM with our reclassification matrix
+#Use the reclassify() function to assign new values to LCM with reclassification matrix
 
 urban = classify(LCM_sdm, RCmatrixUrban)
 
-#neighbourhood weights matrix to sum all available resources for each cell
+#Neighborhood weights matrix to sum all available resources for each cell
 
-#get number of picels needed to cover the 2300 metre radius for the urban class
+#get number of pixels needed to cover the 2300 meter radius for the urban class
 
 nPixUrban=round(2300/res(LCM_sdm)[1])
 
@@ -269,7 +271,7 @@ nPixUrban=round(2300/res(LCM_sdm)[1])
 
 nPixUrban=(nPixUrban*2)+1
 
-#buiild weights matrix
+#Build weights matrix
 weightsMatrixUrban=matrix(1:nPixUrban^2,nrow=nPixUrban,ncol=nPixUrban)
 
 #get focal cell 
@@ -325,11 +327,11 @@ back_sdm =back_sdm[!is.na(back_sdm$broadleaf),]
 
 back_sdm = st_as_sf(back_sdm,crs="EPSG:27700")
 
-## Extraction of data to point s##
+####Extraction of data to points####
 #Get environmental covariates at presence locations
 eP_sdm = terra::extract(allEnv, melesFin)
 
-#bind together the presence data using cbind() which binds together objects by column (i.e. with different columns but the same number of rows)
+#bind together the presence data using cbind() 
 Pres.cov=st_as_sf(cbind(eP_sdm, melesFin))
 
 Pres.cov$Pres=1
@@ -348,7 +350,7 @@ Back.cov=st_as_sf(data.frame(back_sdm,Pres=0))
 #get coordinates of background points for cross validation later
 coordsBack=st_coordinates(back_sdm)
 
-#combine
+#combine the Presence and absence data coordinates
 coords=data.frame(rbind(coordsPres,coordsBack))
 
 #assign column names
@@ -534,7 +536,16 @@ plot(prGLM > trGLM, main='presence/absence')
 ##### Mapping Maxnet #####
 
 #Fit maxent model on all data
-maxnetAll = maxnet(all.cov$Pres, all.cov[,c("broadleaf","urban","elev"),classes = "lq"])
+maxnetAll = maxnet(all.cov$Pres, all.cov[,c("broadleaf","urban","elev")] ,classes = "lq")
+
+#Get optimal threshold
+predAll = predict(maxnetAll, as.data.frame(all.cov), type="cloglog")
+maxnetROC = evalmod(scores=predAll, labels=all.cov$Pres)
+roc_df = data.frame(
+  threshold = seq(0,1,length=length(maxnetROC$rocs[[1]][1]$x)),
+  falsePositive = maxnetROC$rocs[[1]][1]$x,
+  truePositive = maxnetROC$rocs[[1]][2]$y)
+meanOptMax = roc_df[which.max((1-roc_df$falsePositive) + roc_df$truePositive),]$threshold
 
 #Predict the model to data
 prMAX <- predict(allEnv, maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
@@ -542,7 +553,7 @@ prMAX <- predict(allEnv, maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
 #plot according to predicted values and to thresholds
 par(mfrow=c(1,2))
 plot(prMAX, main='Maxent Prediction')
-prMAX<-predict(allEnv,maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
+prMAX<-predict(allEnv,maxnetAll,clamp=F,na.rm=TRUE,type="cloglog")
 
 
 plot(prMAX> meanOptMax, main='presence/absence')
