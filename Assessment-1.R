@@ -533,6 +533,44 @@ plot(prGLM, main='GLM, regression')
 
 plot(prGLM > trGLM, main='presence/absence')
 
+#build new data frame based on mean of elev and urban but varying values for broadleaf. 
+glmNew=data.frame(broadleaf=seq(0,max(all.cov$broadleaf),length=1000),
+                  elev=mean(all.cov$elev),
+                  urban=mean(all.cov$urban))
+
+
+# use type = "response" for probability-scale predictions
+preds = predict(glm.meles, newdata = glmNew, type = "response", se.fit = TRUE)
+glmNew$fit = preds$fit
+glmNew$se = preds$se.fit
+
+head(glmNew)
+
+#build new data frame based on mean of broaleaf and urban but varying values for elev. 
+glmElev=data.frame(elev=seq(0,max(all.cov$elev),length=1000),
+                   urban=mean(all.cov$urban),
+                   broadleaf=mean(all.cov$broadleaf))
+
+
+# use type = "response" for probability-scale predictions    
+predElev = predict(glm.meles, newdata = glmElev, type = "response", se.fit = TRUE)
+glmElev$fit = predElev$fit
+glmElev$se = predElev$se.fit
+ggplot(glmElev, aes(x = elev, y = fit)) +
+  
+  geom_ribbon(data = glmElev, aes(y = fit, ymin = fit - 1.96 * se, ymax = fit + 1.96 * se),
+              fill = "blue", alpha = 0.3) +
+  geom_line(data = glmElev, aes(y = fit))
+
+#use ggplot to plot the fitted values against the broadleaf variable.
+
+
+ggplot(glmNew, aes(x = broadleaf, y = fit)) +
+  
+  geom_ribbon(data = glmNew, aes(y = fit, ymin = fit - 1.96 * se, ymax = fit + 1.96 * se),
+              fill = "blue", alpha = 0.3) +
+  geom_line(data = glmNew, aes(y = fit))
+
 ##### Mapping Maxnet #####
 
 #Fit maxent model on all data
@@ -548,7 +586,7 @@ roc_df = data.frame(
 meanOptMax = roc_df[which.max((1-roc_df$falsePositive) + roc_df$truePositive),]$threshold
 
 #Predict the model to data
-prMAX <- predict(allEnv, maxnetMod,clamp=F,na.rm=TRUE,type="cloglog")
+prMAX <- predict(allEnv, maxnetAll,clamp=F,na.rm=TRUE,type="cloglog")
 
 #plot according to predicted values and to thresholds
 par(mfrow=c(1,2))
@@ -557,4 +595,18 @@ prMAX<-predict(allEnv,maxnetAll,clamp=F,na.rm=TRUE,type="cloglog")
 
 
 plot(prMAX> meanOptMax, main='presence/absence')
+
+maxNew = data.frame(broadleaf=seq(0,max(all.cov$broadleaf), length=1000),
+                    elev=mean(all.cov$elev),
+                    urban=mean(all.cov$urban))
+
+predictMax = predict(maxnetAll, newdata=maxNew, type="cloglog")
+maxNew$fit = predictMax
+ggplot(maxNew, aes(x = broadleaf, y = fit)) +
+  
+  geom_ribbon(data = maxNew, aes(y = fit, ymin = fit - 1.96 * se, ymax = fit + 1.96 * se),
+              fill = "blue", alpha = 0.3) +
+  geom_line(data = maxNew, aes(y = fit))
+
+
 
