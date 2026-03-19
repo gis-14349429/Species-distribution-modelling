@@ -21,7 +21,7 @@ library(precrec)
 library(ranger)
 #Read in the .csv file 
 meles<- read.csv("Melesmeles.csv")
-#Check the first  six rows of the data 
+#Check the first six rows of the data 
 head(meles)
 #Checking the class of the loaded .csv file
 class(meles)
@@ -64,13 +64,13 @@ extent.new<-ext(x.min,x.max,y.min,y.max)
 LCM.crop <- crop(LCM$LCMUK_1, extent.new)
 plot(LCM.crop)
 
-#Reclassification of LCM to binary braodleaf woodland layer 
+#Reclassification of LCM to binary broadleaf woodland layer 
 LCM.factor<-as.factor(LCM.crop)
 levels(LCM.factor)
 #create an vector object called reclass
 reclass <- c(0,1,rep(0,19))
 
-# combine with the LCM categories into a matrix of old and new values.
+#combine with the LCM categories into a matrix of old and new values.
 RCmatrix<- cbind(levels(LCM.factor)[[1]],reclass)
 
 RCmatrix<-RCmatrix[,2:3]
@@ -595,18 +595,6 @@ prMAX<-predict(allEnv,maxnetAll,clamp=F,na.rm=TRUE,type="cloglog")
 
 
 plot(prMAX> meanOptMax, main='presence/absence')
-
-maxNew = data.frame(broadleaf=seq(0,max(all.cov$broadleaf), length=1000),
-                    elev=mean(all.cov$elev),
-                    urban=mean(all.cov$urban))
-
-predictMax = predict(maxnetAll, newdata=maxNew, type="cloglog")
-maxNew$fit = predictMax
-ggplot(maxNew, aes(x = broadleaf, y = fit)) +
-  
-  geom_ribbon(data = maxNew, aes(y = fit, ymin = fit - 1.96 * se, ymax = fit + 1.96 * se),
-              fill = "blue", alpha = 0.3) +
-  geom_line(data = maxNew, aes(y = fit))
 
 
 
